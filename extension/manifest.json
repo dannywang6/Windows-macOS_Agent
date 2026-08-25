@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Study Agent Tab Reporter",
+  "version": "1.0",
+  "description": "向本地 Agent 上报当前标签页",
+  "permissions": ["tabs"],
+  "host_permissions": ["http://localhost/*"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

@@ -1,0 +1,295 @@
+# 学习监督系统 - Windows Agent开发文档
+
+
+## 一、项目目标
+
+
+运行在Windows电脑上的后台程序。
+
+
+负责：
+
+- 获取当前电脑活动
+- 分析使用场景
+- 保存本地数据
+- 上传服务器
+
+
+
+架构：
+
+
+Windows
+
+    |
+    |
+ Windows Agent
+
+    |
+    |
+ Spring Boot
+
+
+
+---
+
+# 二、技术方案
+
+
+开发语言：
+
+Java
+
+
+版本：
+
+Java 17
+
+
+主要技术：
+
+- JavaFX（可选UI）
+- JNA
+- SQLite
+- HTTP Client
+
+
+
+---
+
+# 三、核心功能
+
+
+## 1. 进程监控
+
+
+获取当前运行程序。
+
+
+例如：
+
+
+idea64.exe
+
+分类：
+
+Java学习
+
+
+
+FortniteClient.exe
+
+分类：
+
+游戏
+
+
+
+chrome.exe
+
+继续分析网页。
+
+
+
+---
+
+# 2. 窗口信息获取
+
+
+获取：
+
+- 当前窗口标题
+- 当前应用
+
+
+例如：
+
+
+窗口：
+
+Spring Boot源码解析 - 哔哩哔哩
+
+
+可以辅助判断：
+
+学习 / 娱乐
+
+
+
+---
+
+# 3. 浏览器监控
+
+
+通过Chrome Extension获取：
+
+
+- 当前URL
+- 页面标题
+
+
+例如：
+
+
+bilibili.com
+
+娱乐
+
+
+
+github.com
+
+学习
+
+
+
+日语词汇网站
+
+日语学习
+
+
+
+---
+
+# 4. 本地数据存储
+
+
+SQLite保存：
+
+
+activity_record
+
+
+
+字段：
+
+
+app
+
+title
+
+url
+
+category
+
+start_time
+
+duration
+
+
+
+---
+
+# 5. 上传模块
+
+
+HTTP请求发送到Spring Boot。
+
+
+接口：
+
+
+POST
+
+/api/activity/report
+
+
+
+上传：
+
+- 软件
+- 网站
+- 分类
+- 时间
+
+
+
+---
+
+# 四、开发阶段
+
+
+## 第一版
+
+
+目标：
+
+完成基础监控。
+
+
+功能：
+
+✅ 获取当前进程
+
+✅ 计算使用时间
+
+✅ SQLite保存
+
+✅ 上传服务器
+
+
+
+---
+
+## 第二版
+
+
+增加：
+
+
+✅ Chrome URL获取
+
+✅ 网站分类
+
+✅ 游戏识别
+
+
+
+---
+
+## 第三版
+
+
+增加：
+
+
+✅ AI分析
+
+✅ 自动日报
+
+✅ 智能建议
+
+
+
+---
+
+# 五、项目结构
+
+
+windows-agent
+
+
+├── monitor
+
+│   └── ProcessMonitor
+
+
+├── storage
+
+│   └── SQLiteManager
+
+
+├── upload
+
+│   └── ApiClient
+
+
+├── analyze
+
+│   └── CategoryAnalyzer
+
+
+└── main
+
+    └── Application
+
