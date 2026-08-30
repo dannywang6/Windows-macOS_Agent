@@ -4,6 +4,7 @@ import com.studyagent.analyze.CategoryAnalyzer;
 import com.studyagent.localserver.TabServer;
 import com.studyagent.model.ActiveTab;
 import com.studyagent.model.ActivityRecord;
+import com.studyagent.monitor.IdleMonitor;
 import com.studyagent.monitor.ProcessMonitor;
 import com.studyagent.storage.SQLiteManager;
 import com.studyagent.upload.ApiClient;
@@ -17,8 +18,10 @@ import java.util.List;
 public class Application {
 
     private static final long INTERVAL_MILLIS = 5000;
+    private static final long IDLE_THRESHOLD_MILLIS = 60_000;
 
     private final ProcessMonitor monitor;
+    private final IdleMonitor idleMonitor;
     private final CategoryAnalyzer analyzer;
     private final SQLiteManager db;
     private final ApiClient api;
@@ -28,10 +31,12 @@ public class Application {
     private String currentTitle;
     private String currentUrl;
     private LocalDateTime currentStart;
+    private long idleAccumulatedMillis;
 
     public Application(String dbPath, String serverUrl) {
         this.analyzer = new CategoryAnalyzer();
-        this.monitor = new ProcessMonitor(analyzer);
+        this.monitor = ProcessMonitor.create();
+        this.idleMonitor = IdleMonitor.create();
         this.db = new SQLiteManager(dbPath);
         this.api = new ApiClient(serverUrl);
         this.tabServer = new TabServer();
@@ -56,6 +61,7 @@ public class Application {
                 currentApp = app;
                 currentTitle = title;
                 currentUrl = null;
+                idleAccumulatedMillis = 0;
                 if (analyzer.isBrowser(app)) {
                     ActiveTab tab = tabServer.getLatestTab();
                     if (tab != null) {
@@ -69,6 +75,10 @@ public class Application {
                 System.out.println("Switched to: " + app);
             }
 
+            if (idleMonitor.getLastInputIdleMillis() >= IDLE_THRESHOLD_MILLIS) {
+                idleAccumulatedMillis += INTERVAL_MILLIS;
+            }
+
             uploadPendingRecords();
             cleanupOldRecords();
             Thread.sleep(INTERVAL_MILLIS);
@@ -79,6 +89,8 @@ public class Application {
         if (currentApp == null) {
             return;
         }
+        long effectiveDuration = Math.max(0,
+                Duration.between(currentStart, LocalDateTime.now()).toMillis() - idleAccumulatedMillis);
         ActivityRecord record = new ActivityRecord(
                 0L,
                 currentApp,
@@ -86,7 +98,7 @@ public class Application {
                 currentUrl,
                 analyzer.analyze(currentApp, currentTitle, currentUrl),
                 currentStart,
-                Duration.between(currentStart, LocalDateTime.now()).toMillis(),
+                effectiveDuration,
                 false);
 
         try {

@@ -19,7 +19,7 @@ public class TabServer {
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/tab", this::handleTab);
         server.start();
-        System.out.println("TabServer started on port " + port);
+        System.out.println("TabServer 已启动 端口在: " + port);
     }
 
     private void handleTab(HttpExchange exchange) throws IOException {

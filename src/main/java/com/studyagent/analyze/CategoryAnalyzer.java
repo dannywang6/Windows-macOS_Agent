@@ -28,7 +28,8 @@ public class CategoryAnalyzer {
             return false;
         }
         String lower = app.toLowerCase(Locale.ROOT);
-        return lower.contains("chrome") || lower.contains("edge") || lower.contains("firefox");
+        return lower.contains("chrome") || lower.contains("edge") || lower.contains("firefox")
+                || lower.contains("safari");
     }
 
     private boolean isGame(String app) {
