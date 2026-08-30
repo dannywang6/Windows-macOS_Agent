@@ -11,12 +11,6 @@ import com.sun.jna.ptr.IntByReference;
 
 public class WindowsProcessMonitor extends ProcessMonitor {
 
-
-
-    public WindowsProcessMonitor() {
-
-    }
-
     @Override
     public String getActiveWindowTitle() {
         HWND hwnd = User32.INSTANCE.GetForegroundWindow();

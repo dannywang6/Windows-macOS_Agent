@@ -1,0 +1,16 @@
+{
+  "server":   { "baseUrl": "http://localhost:8080", "reportPath": "/api/activity/report" },
+  "monitor":  { "intervalSeconds": 5, "idleThresholdSeconds": 60 },
+  "tabServerPort": 9876,
+  "guiPort": 18080,
+  "dbPath": "data/activity.db",
+  "browsers": [ "chrome", "edge", "firefox", "safari" ],
+  "categories": {
+    "学习":  ["idea", "code", "gpt", "navicat", "pycharm", "clion", "terminal", "iterm", "notion", "备忘录", "notes"],
+    "娱乐":  ["fortnite", "steam", "epicgameslauncher", "cs2", "gta", "overwatch", "哔哩哔哩", "bilibili"]
+  },
+  "urlRules": {
+    "学习": ["github.com", "stackoverflow.com", "leetcode.com", "csdn.net"],
+    "娱乐": ["bilibili.com", "youtube.com", "youku.com", "iqiyi.com"]
+  }
+}

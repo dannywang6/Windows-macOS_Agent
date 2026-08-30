@@ -9,7 +9,6 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.time.LocalDateTime;
 import java.util.List;
 
 
@@ -20,14 +19,14 @@ public class ApiClient {
      private final String baseUrl;
      private final String reportPath;
 
-     public ApiClient(String baseUrl) {
-         this.baseUrl = baseUrl;
-         this.reportPath = "/api/activity/report";
-         this.httpClient = HttpClient.newHttpClient();
-         this.objectMapper = new ObjectMapper();
-         this.objectMapper.registerModule(new JavaTimeModule());
-         this.objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-     }
+    public ApiClient(String baseUrl, String reportPath) {
+        this.baseUrl = baseUrl;
+        this.reportPath = reportPath;
+        this.httpClient = HttpClient.newHttpClient();
+        this.objectMapper = new ObjectMapper();
+        this.objectMapper.registerModule(new JavaTimeModule());
+        this.objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    }
 
     public boolean report(List<ActivityRecord> records) {
         try {
@@ -49,13 +48,4 @@ public class ApiClient {
             return false;
         }
     }
-
-    public String toJson(List<ActivityRecord> records) {
-        try {
-            return objectMapper.writeValueAsString(records);
-        } catch (Exception e) {
-            return "[]";
-        }
-    }
-
 }

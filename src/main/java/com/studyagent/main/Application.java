@@ -8,6 +8,10 @@ import com.studyagent.monitor.IdleMonitor;
 import com.studyagent.monitor.ProcessMonitor;
 import com.studyagent.storage.SQLiteManager;
 import com.studyagent.upload.ApiClient;
+import com.studyagent.config.Config;
+import com.studyagent.config.ConfigLoader;
+import com.studyagent.util.LogBuffer;
+import com.studyagent.webui.WebUiServer;
 
 import java.io.IOException;
 import java.sql.SQLException;
@@ -17,8 +21,10 @@ import java.util.List;
 
 public class Application {
 
-    private static final long INTERVAL_MILLIS = 5000;
-    private static final long IDLE_THRESHOLD_MILLIS = 60_000;
+    private final long intervalMillis;
+    private final long idleThresholdMillis;
+    private final int tabServerPort;
+    private final int guiPort;
 
     private final ProcessMonitor monitor;
     private final IdleMonitor idleMonitor;
@@ -26,6 +32,8 @@ public class Application {
     private final SQLiteManager db;
     private final ApiClient api;
     private final TabServer tabServer;
+    private final WebUiServer webServer;
+    private final LogBuffer logBuffer;
 
     private String currentApp;
     private String currentTitle;
@@ -33,13 +41,20 @@ public class Application {
     private LocalDateTime currentStart;
     private long idleAccumulatedMillis;
 
-    public Application(String dbPath, String serverUrl) {
-        this.analyzer = new CategoryAnalyzer();
+    public Application(Config config) {
+        this.analyzer = new CategoryAnalyzer(config);
         this.monitor = ProcessMonitor.create();
         this.idleMonitor = IdleMonitor.create();
-        this.db = new SQLiteManager(dbPath);
-        this.api = new ApiClient(serverUrl);
+        this.intervalMillis = config.getIntervalMillis();
+        this.idleThresholdMillis = config.getIdleThresholdMillis();
+        this.tabServerPort = config.getTabServerPort();
+        this.guiPort = config.getGuiPort();
+        this.db = new SQLiteManager(config.getDbPath());
+        this.api = new ApiClient(config.getServer().getBaseUrl(), config.getServer().getReportPath());
         this.tabServer = new TabServer();
+        this.logBuffer = new LogBuffer(500);
+        this.logBuffer.install();
+        this.webServer = new WebUiServer(db, logBuffer, this::uploadPendingRecords);
     }
 
     public void start() throws SQLException, InterruptedException {
@@ -47,9 +62,15 @@ public class Application {
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
 
         try {
-            tabServer.start(9876);
+            tabServer.start(tabServerPort);
         } catch (IOException e) {
             System.out.println("TabServer 启动失败: " + e.getMessage());
+        }
+
+        try {
+            webServer.start(guiPort);
+        } catch (IOException e) {
+            System.out.println("Web UI 启动失败: " + e.getMessage());
         }
 
         while (true) {
@@ -91,13 +112,13 @@ public class Application {
                         : "Tab changed to: " + newUrl);
             }
 
-            if (idleMonitor.getLastInputIdleMillis() >= IDLE_THRESHOLD_MILLIS) {
-                idleAccumulatedMillis += INTERVAL_MILLIS;
+            if (idleMonitor.getLastInputIdleMillis() >= idleThresholdMillis) {
+                idleAccumulatedMillis += intervalMillis;
             }
 
             uploadPendingRecords();
             cleanupOldRecords();
-            Thread.sleep(INTERVAL_MILLIS);
+            Thread.sleep(intervalMillis);
         }
     }
 
@@ -138,8 +159,14 @@ public class Application {
     private void uploadPendingRecords() {
         try {
             List<ActivityRecord> pending = db.findUnuploaded();
-            if (!pending.isEmpty()) {
-                api.report(pending);
+            if (pending.isEmpty()) {
+                return;
+            }
+            if (api.report(pending)) {
+                for (ActivityRecord record : pending) {
+                    db.markUploaded(record.getId());
+                }
+                System.out.println("Uploaded " + pending.size() + " records");
             }
         } catch (SQLException e) {
             System.out.println("Upload check failed: " + e.getMessage());
@@ -167,6 +194,7 @@ public class Application {
     }
 
     public static void main(String[] args) throws Exception {
-        new Application("activity.db", "http://localhost:8080").start();
+        Config config = ConfigLoader.load();
+        new Application(config).start();
     }
 }
