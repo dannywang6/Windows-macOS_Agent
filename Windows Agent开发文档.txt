@@ -1,33 +1,33 @@
-# 学习监督系统 - Windows Agent开发文档
+# 学习监督系统 - 跨平台 Agent 开发文档
 
 
 ## 一、项目目标
 
 
-运行在Windows电脑上的后台程序。
+运行在 Windows / macOS 电脑上的后台程序（跨平台）。
 
 
 负责：
 
-- 获取当前电脑活动
+- 获取当前电脑活动（前台应用 + 窗口标题 + 浏览器标签页）
+- 检测用户是否空闲（鼠标 / 键盘）
 - 分析使用场景
 - 保存本地数据
 - 上传服务器
 
 
-
 架构：
 
 
-Windows
+Windows / macOS
 
     |
     |
- Windows Agent
+ Desktop Agent (本项目, 纯 Java)
 
     |
     |
- Spring Boot
+ Spring Boot 服务端 (另行部署, 接收上报)
 
 
 
@@ -43,15 +43,23 @@ Java
 
 版本：
 
-Java 17
+JDK 25（pom 中 maven.compiler.release=25）
+
+
+构建工具：
+
+Maven
 
 
 主要技术：
 
-- JavaFX（可选UI）
-- JNA
-- SQLite
-- HTTP Client
+- JNA（Windows 原生 API 调用）
+- Swift 原生助手（macOS 获取前台应用/窗口/空闲，随资源打包）
+- SQLite（本地存储, sqlite-jdbc）
+- JDK HTTP Client + Jackson（上传 JSON）
+- Lombok（简化实体类）
+- JDK 内置 HttpServer（接收 Chrome 扩展上报）
+- Chrome Extension（MV3, 上报当前标签页）
 
 
 
@@ -60,40 +68,34 @@ Java 17
 # 三、核心功能
 
 
-## 1. 进程监控
+## 1. 前台进程监控（跨平台分发）
 
 
-获取当前运行程序。
+通过 ProcessMonitor 抽象类的工厂方法，根据当前操作系统自动选择实现：
+
+
+Windows（WindowsProcessMonitor）:
+
+  User32.GetForegroundWindow 拿前台窗口
+    再用 Kernel32 拿进程文件名
+
+macOS（MacProcessMonitor）:
+  调打包的 Swift 助手 frontmost
+    用 NSWorkspace.frontmostApplication（可靠前台应用名）
 
 
 例如：
 
 
-idea64.exe
+idea64.exe / IntelliJ IDEA → 分类：编程学习
 
-分类：
+FortniteClient.exe → 分类：游戏
 
-Java学习
-
-
-
-FortniteClient.exe
-
-分类：
-
-游戏
+使用 Swift 而非裸 JNA 绑 objc_msgSend 的原因：
+  Apple Silicon (arm64) 上硬绑 objc_msgSend 不可靠。
 
 
-
-chrome.exe
-
-继续分析网页。
-
-
-
----
-
-# 2. 窗口信息获取
+## 2. 窗口信息获取
 
 
 获取：
@@ -102,105 +104,103 @@ chrome.exe
 - 当前应用
 
 
-例如：
-
-
-窗口：
-
-Spring Boot源码解析 - 哔哩哔哩
+macOS 上窗口标题通过 CGWindowListCopyWindowInfo 按前台 PID 过滤得到；
+标题读取依赖"屏幕录制"权限。
 
 
 可以辅助判断：
 
-学习 / 娱乐
+- 学习 / 娱乐
 
 
-
----
-
-# 3. 浏览器监控
+## 3. 浏览器标签页监控
 
 
-通过Chrome Extension获取：
+通过 Chrome Extension（extension/ 目录，MV3）获取：
 
-
-- 当前URL
+- 当前 URL
 - 页面标题
 
 
-例如：
+扩展在标签页激活 / 更新 / 窗口聚焦时，POST 到本机 TabServer（默认端口 9876 /tab）：
+{"url": "...", "title": "..."}
 
 
-bilibili.com
+例子：
 
-娱乐
+bilibili.com → 娱乐
 
-
-
-github.com
-
-学习
+github.com → 编程学习
 
 
-
-日语词汇网站
-
-日语学习
-
+切换行为：
+  前台进程变化（换了应用）→ 结账上一条，开新活动
+  仍在浏览器里但 URL 变化（bilibili → github）→ 同样结账、开新活动
 
 
----
-
-# 4. 本地数据存储
+## 4. 用户空闲检测（跨平台）
 
 
-SQLite保存：
+通过 IdleMonitor 抽象类的工厂方法按系统分发：
+
+
+Windows（WindowsIdleMonitor）:
+  User32.GetLastInputInfo + Kernel32.GetTickCount64
+
+macOS（MacIdleMonitor）:
+  读 Swift 助手输出的 idle 字段（CGEventSourceSecondsSinceLastEventType）
+
+
+作用：
+  长时间无鼠标 / 键盘输入时，该段时间不计入有效使用时长。
+  阈值 IDLE_THRESHOLD_MILLIS = 60 秒。
+  即：前台停在 IDEA 但人去看手机的那段时间，会被扣掉。
+
+
+## 5. 本地数据存储
+
+
+SQLite 保存：
 
 
 activity_record
 
 
-
 字段：
 
 
-app
-
-title
-
-url
-
-category
-
-start_time
-
-duration
+id              INTEGER 自增主键
+app             TEXT    应用名
+title           TEXT    窗口/页面标题
+url             TEXT    网页地址（浏览器时）
+category        TEXT    分类（编程学习/游戏/娱乐/浏览网页/其他/未知）
+start_time      TEXT    开始时间
+duration_millis INTEGER 有效时长（已扣除空闲时长）
+uploaded        INTEGER 是否已上传
 
 
-
----
-
-# 5. 上传模块
+## 6. 上传模块
 
 
-HTTP请求发送到Spring Boot。
+当你启动时：
 
 
-接口：
+new Application("activity.db", "http://localhost:8080")
 
 
-POST
-
-/api/activity/report
+HTTP POST 到 Spring Boot：
 
 
+POST /api/activity/report
 
-上传：
 
-- 软件
-- 网站
-- 分类
-- 时间
+请求体：
+
+
+JSON 数组，元素为 ActivityRecord {app, title, url, category, startTime, durationMillis, uploaded}
+
+
+上报后标记 uploaded=1；上传 3 天前的旧记录会被清理删除。
 
 
 
@@ -228,36 +228,34 @@ POST
 ✅ 上传服务器
 
 
-
----
-
 ## 第二版
 
 
 增加：
 
-
-✅ Chrome URL获取
+✅ Chrome URL获取（扩展 + TabServer）
 
 ✅ 网站分类
 
 ✅ 游戏识别
 
+✅ 跨平台：macOS 支持（Swift 助手）
+
+✅ 用户空闲检测（扣除空闲时长）
+
+✅ 浏览器内标签页 URL 变化触发新活动
 
 
----
-
-## 第三版
+## 第三版（规划中）
 
 
 增加：
 
+⬜ AI分析
 
-✅ AI分析
+⬜ 自动日报
 
-✅ 自动日报
-
-✅ 智能建议
+⬜ 智能建议
 
 
 
@@ -266,30 +264,63 @@ POST
 # 五、项目结构
 
 
-windows-agent
+study-agent（原 windows-agent）
 
 
 ├── monitor
-
-│   └── ProcessMonitor
-
-
+│   ├── ProcessMonitor         抽象类 + 工厂（跨平台分发）
+│   ├── WindowsProcessMonitor  Windows 前台进程/窗口
+│   ├── MacProcessMonitor      macOS 前台进程/窗口
+│   ├── MacNativeHelper        macOS: 释放并调用 Swift 助手(frontmost)
+│   ├── IdleMonitor            抽象类 + 工厂（空闲检测分发）
+│   ├── WindowsIdleMonitor     Windows 空闲检测(GetLastInputInfo)
+│   └── MacIdleMonitor         macOS 空闲检测(读 Swift idle 字段)
+│
 ├── storage
-
-│   └── SQLiteManager
-
-
+│   └── SQLiteManager          本地 SQLite 存储
+│
 ├── upload
-
-│   └── ApiClient
-
-
+│   └── ApiClient              上报到 Spring Boot
+│
 ├── analyze
+│   └── CategoryAnalyzer       使用场景分类
+│
+├── localserver
+│   └── TabServer              接收 Chrome 扩展上报的标签页
+│
+├── model
+│   ├── ActivityRecord         活动记录实体
+│   └── ActiveTab              标签页实体
+│
+├── main
+│   └── Application            主循环（入口）
+│
+└── resources/native
+    ├── frontmost.swift         macOS 原生助手源码
+    └── frontmost               macOS 原生助手二进制（随 jar 打包）
 
-│   └── CategoryAnalyzer
 
 
-└── main
+---
 
-    └── Application
+# 六、跨平台说明
 
+
+## macOS 原生助手
+
+
+- 源码：src/main/resources/native/frontmost.swift
+- 打包：随 Maven 资源打进 jar，运行时由 MacNativeHelper 释放到临时目录再调用
+- 输出一行 JSON：{"name":"...","title":"...","idle":<秒数>}
+- 前台应用名校准依赖 arm64 重新编译：
+    xcrun swiftc -O frontmost.swift -o frontmost
+- 权限：
+    - 前台应用名 / 空闲检测：无需权限
+    - 窗口标题读取：需要"屏幕录制"权限（系统设置 → 隐私与安全性 → 屏幕录制）
+
+
+## Windows
+
+
+- WindowsProcessMonitor：JNA User32 / Kernel32
+- WindowsIdleMonitor：JNA GetLastInputInfo（需在真实 Windows 环境验证）

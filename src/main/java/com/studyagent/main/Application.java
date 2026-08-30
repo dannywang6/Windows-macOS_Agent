@@ -56,23 +56,39 @@ public class Application {
             String app = monitor.getActiveProcessName();
             String title = monitor.getActiveWindowTitle();
 
-            if (app != null && !app.equals(currentApp)) {
-                finishCurrentActivity();
-                currentApp = app;
-                currentTitle = title;
-                currentUrl = null;
-                idleAccumulatedMillis = 0;
+            // 浏览器时，扩展会上报当前激活标签页，用它判断是否切了网页
+            String latestUrl = null;
+            String latestTitle = null;
+            if (analyzer.isBrowser(app)) {
+                ActiveTab tab = tabServer.getLatestTab();
+                if (tab != null) {
+                    latestUrl = tab.getUrl();
+                    latestTitle = tab.getTitle();
+                }
+            }
+
+            // 触发"切换"的两种情形：
+            // 1) 前台进程变了（换了应用）
+            // 2) 仍在浏览器里，但激活标签页的 URL 变了（bilibili -> github）
+            boolean appChanged = app != null && !app.equals(currentApp);
+            boolean urlChanged = !appChanged
+                    && currentUrl != null
+                    && latestUrl != null
+                    && !latestUrl.equals(currentUrl);
+
+            if (appChanged || urlChanged) {
+                String newTitle = title;
+                String newUrl = null;
                 if (analyzer.isBrowser(app)) {
-                    ActiveTab tab = tabServer.getLatestTab();
-                    if (tab != null) {
-                        currentUrl = tab.getUrl();
-                        if (tab.getTitle() != null && !tab.getTitle().isBlank()) {
-                            currentTitle = tab.getTitle();
-                        }
+                    newUrl = latestUrl;
+                    if (latestTitle != null && !latestTitle.isBlank()) {
+                        newTitle = latestTitle;
                     }
                 }
-                currentStart = LocalDateTime.now();
-                System.out.println("Switched to: " + app);
+                beginActivity(app, newTitle, newUrl);
+                System.out.println(appChanged
+                        ? "Switched to: " + app
+                        : "Tab changed to: " + newUrl);
             }
 
             if (idleMonitor.getLastInputIdleMillis() >= IDLE_THRESHOLD_MILLIS) {
@@ -83,6 +99,15 @@ public class Application {
             cleanupOldRecords();
             Thread.sleep(INTERVAL_MILLIS);
         }
+    }
+
+    private void beginActivity(String app, String title, String url) {
+        finishCurrentActivity();
+        currentApp = app;
+        currentTitle = title;
+        currentUrl = url;
+        idleAccumulatedMillis = 0;
+        currentStart = LocalDateTime.now();
     }
 
     private void finishCurrentActivity() {
