@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 REM 开启 StudyAgent 开机自启 (Windows)
 REM 通过写入当前用户的注册表 Run 键实现登录自动启动。
 REM 本脚本需要管理员权限(写到 HKLM) 或当前用户(HKCU, 无需管理员)。

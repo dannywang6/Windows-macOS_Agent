@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 REM StudyAgent 发布/部署脚本 (Windows)
 REM 把项目 target 下最新的 study-agent.jar 复制到本脚本所在目录(运行目录)。
 REM 用法: 先在项目里 mvn clean package 打好 jar，再双击本脚本。

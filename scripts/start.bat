@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 REM StudyAgent 启动脚本 (Windows)
 REM 双击本文件即可启动 Agent。
 REM 自动切换到本脚本所在目录，查找 java，运行 study-agent.jar。
@@ -36,6 +37,6 @@ if not defined JAVA_CMD (
 
 echo 启动 StudyAgent ... 按 Ctrl+C 停止
 echo Web UI: http://localhost:18080
-"%JAVA_CMD%" -jar "%JAR%"
+"%JAVA_CMD%" -Dfile.encoding=UTF-8 -jar "%JAR%"
 
 pause

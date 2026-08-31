@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 REM 关闭 StudyAgent 开机自启 (Windows)
 REM 删除注册表 Run 键中的 StudyAgent 项。
 setlocal

@@ -3,6 +3,8 @@
 *.class
 data/
 target/
+config.json
+activity.db
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
