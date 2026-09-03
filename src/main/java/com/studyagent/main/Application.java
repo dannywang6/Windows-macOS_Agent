@@ -4,6 +4,7 @@ import com.studyagent.analyze.CategoryAnalyzer;
 import com.studyagent.localserver.TabServer;
 import com.studyagent.model.ActiveTab;
 import com.studyagent.model.ActivityRecord;
+import com.studyagent.model.IdleRecord;
 import com.studyagent.monitor.IdleMonitor;
 import com.studyagent.monitor.ProcessMonitor;
 import com.studyagent.storage.SQLiteManager;
@@ -15,8 +16,8 @@ import com.studyagent.webui.WebUiServer;
 
 import java.io.IOException;
 import java.sql.SQLException;
-import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 public class Application {
@@ -39,7 +40,8 @@ public class Application {
     private String currentTitle;
     private String currentUrl;
     private LocalDateTime currentStart;
-    private long idleAccumulatedMillis;
+    private boolean isIdle;
+    private LocalDateTime idleStartTime;
 
     public Application(Config config) {
         this.analyzer = new CategoryAnalyzer(config);
@@ -112,8 +114,23 @@ public class Application {
                         : "Tab changed to: " + newUrl);
             }
 
+
+            // Idle 状态机：检测用户是否离开电脑
             if (idleMonitor.getLastInputIdleMillis() >= idleThresholdMillis) {
-                idleAccumulatedMillis += intervalMillis;
+                if (!isIdle) {
+                    // 刚进入 Idle，记录开始时间
+                    isIdle = true;
+                    idleStartTime = LocalDateTime.now();
+                    System.out.println("User idle detected");
+                }
+            } else {
+                if (isIdle) {
+                    // 用户回来了，结束这段 Idle 并保存
+                    endIdle();
+                    isIdle = false;
+                    idleStartTime = null;
+                    System.out.println("User returned from idle");
+                }
             }
 
             uploadPendingRecords();
@@ -127,7 +144,6 @@ public class Application {
         currentApp = app;
         currentTitle = title;
         currentUrl = url;
-        idleAccumulatedMillis = 0;
         currentStart = LocalDateTime.now();
     }
 
@@ -135,24 +151,46 @@ public class Application {
         if (currentApp == null) {
             return;
         }
-        long effectiveDuration = Math.max(0,
-                Duration.between(currentStart, LocalDateTime.now()).toMillis() - idleAccumulatedMillis);
+        // 如果还在 Idle 状态，先结束它
+        if (isIdle && idleStartTime != null) {
+            endIdle();
+        }
+
         ActivityRecord record = new ActivityRecord(
                 0L,
                 currentApp,
                 currentTitle,
                 currentUrl,
                 analyzer.analyze(currentApp, currentTitle, currentUrl),
+                null,
                 currentStart,
-                effectiveDuration,
+                LocalDateTime.now(),
                 false);
 
         try {
             db.save(record);
-            System.out.println("Saved: " + record.getApp()
-                    + "  " + record.getDurationMillis() + " ms  [" + record.getCategory() + "]");
+            System.out.println("Saved: " + record.getApp() +
+                    "  [" + record.getCategory() + "]");
         } catch (SQLException e) {
             System.out.println("Save failed: " + e.getMessage());
+        }
+    }
+
+    private void endIdle() {
+        if (idleStartTime == null) {
+            return;
+        }
+        // 找到当前活动的数据库 ID（刚存进去的那条）
+        try {
+            List<ActivityRecord> records = db.findRecords(1, 0);
+            if (!records.isEmpty()) {
+                long activityId = records.get(0).getId();
+                IdleRecord idle = new IdleRecord(0L, activityId, idleStartTime, LocalDateTime.now(), false);
+                db.saveIdle(idle);
+                System.out.println("Saved idle record: " + activityId);
+            }
+        } catch (SQLException e) {
+            System.out.println("Save idle failed: " + e.getMessage());
         }
     }
 
@@ -162,11 +200,21 @@ public class Application {
             if (pending.isEmpty()) {
                 return;
             }
+            // 给每条 activity 填充关联的 idle 记录
+            List<Long> ids = pending.stream().map(ActivityRecord::getId).toList();
+            var idleMap = db.findIdleByActivityIds(ids);
+            for (ActivityRecord record : pending) {
+                List<IdleRecord> idles = idleMap.getOrDefault(record.getId(), new ArrayList<>());
+                record.setIdleRecords(idles);
+            }
             if (api.report(pending)) {
                 for (ActivityRecord record : pending) {
                     db.markUploaded(record.getId());
+                    for (IdleRecord idle : record.getIdleRecords()) {
+                        db.markIdleUploaded(idle.getId());
+                    }
                 }
-                System.out.println("Uploaded " + pending.size() + " records");
+                System.out.println("Uploaded " + pending.size() + " records (with idle)");
             }
         } catch (SQLException e) {
             System.out.println("Upload check failed: " + e.getMessage());
@@ -176,8 +224,9 @@ public class Application {
     private void cleanupOldRecords() {
         try {
             int deleted = db.deleteUploadedBefore(LocalDateTime.now().minusDays(3));
-            if (deleted > 0) {
-                System.out.println("Cleaned " + deleted + " old records");
+            int deletedIdle = db.deleteUploadedIdleBefore(LocalDateTime.now().minusDays(3));
+            if (deleted > 0 || deletedIdle > 0) {
+                System.out.println("Cleaned " + deleted + " activity + " + deletedIdle + " idle records");
             }
         } catch (SQLException e) {
             System.out.println("Cleanup failed: " + e.getMessage());
