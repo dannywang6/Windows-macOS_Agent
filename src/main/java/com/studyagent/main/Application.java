@@ -19,6 +19,7 @@ import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class Application {
 
@@ -119,10 +120,12 @@ public class Application {
             // Idle 状态机：检测用户是否离开电脑
             if (idleMonitor.getLastInputIdleMillis() >= idleThresholdMillis) {
                 if (!isIdle) {
-                    // 刚进入 Idle，记录开始时间
+                    // 刚进入 Idle：真正开始空闲的时刻 = 当前时间 - 已空闲时长
+                    //（避免把"空闲到现在"这段轮询误差错算到活动时间里）
                     isIdle = true;
-                    idleStartTime = LocalDateTime.now();
-                    System.out.println("User idle detected");
+                    idleStartTime = computeIdleStart(
+                            LocalDateTime.now(), idleMonitor.getLastInputIdleMillis());
+                    System.out.println("User idle detected (start=" + idleStartTime + ")");
                 }
             } else {
                 if (isIdle) {
@@ -142,11 +145,23 @@ public class Application {
 
     private void beginActivity(String app, String title, String url) {
         finishCurrentActivity();
+        // 防御：若切换时仍处于 Idle（用户在空闲中切了应用/标签），先把 Idle 收尾，
+        // 避免把它错误地挂到新的 Activity 上
+        if (isIdle && idleStartTime != null) {
+            recordIdleEnd();
+            isIdle = false;
+            idleStartTime = null;
+        }
         pendingIdles.clear();
         currentApp = app;
         currentTitle = title;
         currentUrl = url;
         currentStart = LocalDateTime.now();
+    }
+
+    /** 真正开始空闲的时刻 = 当前时间 - 已空闲时长（避免轮询误差少算空闲时间） */
+    static LocalDateTime computeIdleStart(LocalDateTime now, long lastInputIdleMillis) {
+        return now.minusNanos(TimeUnit.MILLISECONDS.toNanos(lastInputIdleMillis));
     }
 
     private void finishCurrentActivity() {
