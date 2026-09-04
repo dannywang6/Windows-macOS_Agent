@@ -10,8 +10,8 @@ public class CategoryAnalyzer {
         this.config = config;
     }
 
-    public String analyze(String app, String title, String url) {
-        return config.classify(app, url);
+    public Config.Classification analyze(String app, String title, String url) {
+        return config.analyze(app, title, url);
     }
 
     public boolean isBrowser(String app) {

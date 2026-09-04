@@ -10,7 +10,11 @@
     "娱乐":  ["fortnite", "steam", "epicgameslauncher", "cs2", "gta", "overwatch", "哔哩哔哩", "bilibili"]
   },
   "urlRules": {
-    "学习": ["github.com", "stackoverflow.com", "leetcode.com", "csdn.net"],
+    "学习": ["github.com", "stackoverflow.com", "leetcode.com", "csdn.net", "geeksforgeeks"],
     "娱乐": ["bilibili.com", "youtube.com", "youku.com", "iqiyi.com"]
+  },
+  "titleRules": {
+    "学习": ["java", "教程", "编程", "代码", "开发", "vue", "spring", "python", "教学", "课程", "tutorial"],
+    "娱乐": ["搞笑", "动漫", "综艺", "电影", "游戏实况", "演唱会", "vlog"]
   }
 }

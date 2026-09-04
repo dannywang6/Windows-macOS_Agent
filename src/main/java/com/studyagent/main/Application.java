@@ -42,6 +42,7 @@ public class Application {
     private LocalDateTime currentStart;
     private boolean isIdle;
     private LocalDateTime idleStartTime;
+    private final List<IdleRecord> pendingIdles = new ArrayList<>();
 
     public Application(Config config) {
         this.analyzer = new CategoryAnalyzer(config);
@@ -125,8 +126,8 @@ public class Application {
                 }
             } else {
                 if (isIdle) {
-                    // 用户回来了，结束这段 Idle 并保存
-                    endIdle();
+                    // 用户回来了，记录这段 Idle（暂存内存，等活动结束关联）
+                    recordIdleEnd();
                     isIdle = false;
                     idleStartTime = null;
                     System.out.println("User returned from idle");
@@ -141,6 +142,7 @@ public class Application {
 
     private void beginActivity(String app, String title, String url) {
         finishCurrentActivity();
+        pendingIdles.clear();
         currentApp = app;
         currentTitle = title;
         currentUrl = url;
@@ -151,47 +153,49 @@ public class Application {
         if (currentApp == null) {
             return;
         }
-        // 如果还在 Idle 状态，先结束它
+        // 如果还在 Idle 状态，先把它收进内存
         if (isIdle && idleStartTime != null) {
-            endIdle();
+            recordIdleEnd();
         }
+
+        com.studyagent.config.Config.Classification cl =
+                analyzer.analyze(currentApp, currentTitle, currentUrl);
 
         ActivityRecord record = new ActivityRecord(
                 0L,
                 currentApp,
                 currentTitle,
                 currentUrl,
-                analyzer.analyze(currentApp, currentTitle, currentUrl),
-                null,
+                cl.category,
+                cl.subcategory,
                 currentStart,
                 LocalDateTime.now(),
                 false);
 
         try {
             db.save(record);
+            // 该活动进行中发生的所有 Idle 段，关联到这个活动 ID 并落库
+            for (IdleRecord idle : pendingIdles) {
+                idle.setActivityId(record.getId());
+                db.saveIdle(idle);
+            }
+            pendingIdles.clear();
             System.out.println("Saved: " + record.getApp() +
-                    "  [" + record.getCategory() + "]");
+                    "  [" + record.getCategory() + "/" + record.getSubcategory() + "]");
         } catch (SQLException e) {
             System.out.println("Save failed: " + e.getMessage());
         }
     }
 
-    private void endIdle() {
+    /** 用户回来，把这段 Idle 暂存到当前活动的内存列表（等活动 save 后关联） */
+    private void recordIdleEnd() {
         if (idleStartTime == null) {
             return;
         }
-        // 找到当前活动的数据库 ID（刚存进去的那条）
-        try {
-            List<ActivityRecord> records = db.findRecords(1, 0);
-            if (!records.isEmpty()) {
-                long activityId = records.get(0).getId();
-                IdleRecord idle = new IdleRecord(0L, activityId, idleStartTime, LocalDateTime.now(), false);
-                db.saveIdle(idle);
-                System.out.println("Saved idle record: " + activityId);
-            }
-        } catch (SQLException e) {
-            System.out.println("Save idle failed: " + e.getMessage());
-        }
+        IdleRecord idle = new IdleRecord(0L, 0L, idleStartTime, LocalDateTime.now(), false);
+        pendingIdles.add(idle);
+        idleStartTime = null;
+        System.out.println("Idle captured: " + idle.getStartTime() + " -> " + idle.getEndTime());
     }
 
     private void uploadPendingRecords() {

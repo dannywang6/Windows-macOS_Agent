@@ -1,6 +1,5 @@
 package com.studyagent.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -22,8 +21,7 @@ public class ActivityRecord {
     private LocalDateTime endTime;
     private boolean uploaded;
 
-    /** 与活动关联的 Idle 记录，仅用于上传序列化，不落库 */
-    @JsonIgnore
+    /** 与活动关联的 Idle 记录，用于上传序列化；本地存储时不落库 */
     private List<IdleRecord> idleRecords = new ArrayList<>();
 
     public ActivityRecord(long id, String app, String title, String url,

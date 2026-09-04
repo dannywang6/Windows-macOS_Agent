@@ -25,6 +25,8 @@ public class Config {
 
     private Map<String, List<String>> urlRules = new LinkedHashMap<>();
 
+    private Map<String, List<String>> titleRules = new LinkedHashMap<>();
+
     @Data
     public static class Server {
         private String baseUrl = "http://localhost:8080";
@@ -60,40 +62,61 @@ public class Config {
         return false;
     }
 
-    public String classify(String app, String url) {
+    /** 分类结果：主分类 + 子分类 */
+    public static class Classification {
+        public String category;
+        public String subcategory;
+
+        public Classification(String category, String subcategory) {
+            this.category = category;
+            this.subcategory = subcategory;
+        }
+    }
+
+    /** 综合 app/title/url 判断主分类与子分类 */
+    public Classification analyze(String app, String title, String url) {
         if (isBrowser(app)) {
-            return classifyByUrl(url);
+            return analyzeBrowser(title, url);
         }
-        return classifyByApp(app);
+        return analyzeApp(app);
     }
 
-    private String classifyByApp(String app) {
-        if (app == null) {
-            return "其他";
+    /** 浏览器：优先按 title 关键字，其次按 url 规则 */
+    private Classification analyzeBrowser(String title, String url) {
+        // 1) 先看标题里的关键字，可按内容细分（如 youtube 上的 java 教程 -> 学习）
+        String titleCat = matchRules(titleRules, title);
+        if (titleCat != null) {
+            return new Classification(titleCat, title);
         }
-        String lower = app.toLowerCase(Locale.ROOT);
-        for (Map.Entry<String, List<String>> entry : categories.entrySet()) {
+        // 2) 再看 url 规则
+        String urlCat = matchRules(urlRules, url);
+        if (urlCat != null) {
+            return new Classification(urlCat, null);
+        }
+        return new Classification("浏览网页", null);
+    }
+
+    /** 非浏览器应用：按 app 名称 */
+    private Classification analyzeApp(String app) {
+        String cat = matchRules(categories, app);
+        if (cat == null) {
+            return new Classification("其他", null);
+        }
+        return new Classification(cat, null);
+    }
+
+    private String matchRules(Map<String, List<String>> rules, String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        String lower = text.toLowerCase(Locale.ROOT);
+        for (Map.Entry<String, List<String>> entry : rules.entrySet()) {
             for (String keyword : entry.getValue()) {
                 if (keyword != null && lower.contains(keyword.toLowerCase(Locale.ROOT))) {
                     return entry.getKey();
                 }
             }
         }
-        return "其他";
-    }
-
-    private String classifyByUrl(String url) {
-        if (url == null || url.isBlank()) {
-            return "其他";
-        }
-        String lower = url.toLowerCase(Locale.ROOT);
-        for (Map.Entry<String, List<String>> entry : urlRules.entrySet()) {
-            for (String keyword : entry.getValue()) {
-                if (keyword != null && lower.contains(keyword.toLowerCase(Locale.ROOT))) {
-                    return entry.getKey();
-                }
-            }
-        }
-        return "浏览网页";
+        return null;
     }
 }
